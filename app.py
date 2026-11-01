@@ -36,7 +36,6 @@ def obradi_sliku_bytes(image_bytes, trgovina_naziv, filename):
   )
 
   try:
-    # Određivanje mime type prema ekstenziji
     mime_type = (
         "image/png" if filename.lower().endswith(".png") else "image/jpeg"
     )
@@ -65,56 +64,64 @@ def obradi_sliku_bytes(image_bytes, trgovina_naziv, filename):
     return []
 
 
-# --- BOČNA TRAKA (SIDEBAR) - UPLOAD ZIP ARHIVE ---
+# --- BOČna Traka (SIDEBAR) - UPLOAD ZIP ARHIVE ---
 st.sidebar.header("📅 Upload ZIP Arhive Kataloga")
 trgovina_select = st.sidebar.selectbox(
     "Odaberi trgovinu:",
     ["Plodine", "Kaufland", "Lidl", "Konzum", "Interspar", "Eurospin"],
 )
 
+# Maknuto ograničenje tipa da Android može bez problema poslati ZIP
 uploaded_zip = st.sidebar.file_uploader(
-    f"Učitaj ZIP (.zip) sa slikama za {trgovina_select}", type=["zip"]
+    f"Učitaj ZIP (.zip) sa slikama za {trgovina_select}"
 )
 
 if st.sidebar.button("Obradi i Raspakiraj ZIP"):
   if uploaded_zip is not None:
     ukupno_spremljeno = 0
-    with zipfile.ZipFile(uploaded_zip, "r") as z:
-      # Filtriramo samo slike
-      slike_u_zipu = [
-          f
-          for f in z.namelist()
-          if f.lower().endswith((".png", ".jpg", ".jpeg"))
-          and not f.startswith("__MACOSX/")
-      ]
+    try:
+      with zipfile.ZipFile(uploaded_zip, "r") as z:
+        slike_u_zipu = [
+            f
+            for f in z.namelist()
+            if f.lower().endswith((".png", ".jpg", ".jpeg"))
+            and not f.startswith("__MACOSX/")
+        ]
 
-      if not slike_u_zipu:
-        st.sidebar.error("U ZIP arhivi nisu pronađene slike.")
-      else:
-        progress_bar = st.sidebar.progress(0)
-        total_files = len(slike_u_zipu)
+        if not slike_u_zipu:
+          st.sidebar.error(
+              "U ZIP arhivi nisu pronađene slike (jpg/png format)."
+          )
+        else:
+          progress_bar = st.sidebar.progress(0)
+          total_files = len(slike_u_zipu)
 
-        for i, filename in enumerate(slike_u_zipu):
-          with z.open(filename) as img_file:
-            img_bytes = img_file.read()
-            with st.spinner(
-                f"Obrađujem sliku {i+1} od {total_files} ({filename})..."
-            ):
-              izvuceni_podaci = obradi_sliku_bytes(
-                  img_bytes, trgovina_select, filename
-              )
-              if izvuceni_podaci:
-                supabase.table("katalog_artikli").insert(
-                    izvuceni_podaci
-                ).execute()
-                ukupno_spremljeno += len(izvuceni_podaci)
-          progress_bar.progress((i + 1) / total_files)
+          for i, filename in enumerate(slike_u_zipu):
+            with z.open(filename) as img_file:
+              img_bytes = img_file.read()
+              with st.spinner(
+                  f"Obrađujem sliku {i+1} od {total_files} ({filename})..."
+              ):
+                izvuceni_podaci = obradi_sliku_bytes(
+                    img_bytes, trgovina_select, filename
+                )
+                if izvuceni_podaci:
+                  supabase.table("katalog_artikli").insert(
+                      izvuceni_podaci
+                  ).execute()
+                  ukupno_spremljeno += len(izvuceni_podaci)
+            progress_bar.progress((i + 1) / total_files)
 
-        st.sidebar.success(
-            f"Uspješno obrađeno i spremljeno {ukupno_spremljeno} artikala iz"
-            f" {total_files} slika u ZIP-u!"
-        )
-        st.rerun()
+          st.sidebar.success(
+              f"Uspješno obrađeno i spremljeno {ukupno_spremljeno} artikala iz"
+              f" {total_files} slika!"
+          )
+          st.rerun()
+    except Exception as e:
+      st.sidebar.error(
+          "Greška kod čitanja ZIP datoteke. Provjerite je li datoteka u"
+          " .zip formatu."
+      )
   else:
     st.sidebar.error("Molimo učitajte ZIP datoteku.")
 
@@ -200,7 +207,7 @@ with tab1:
       item for item in popis_data if item.get("trgovina") == aktivna_trgovina
   ]
 
-  if popis_za_trgovina:
+  if popis_za_trgovinu:
     st.markdown(f"### Popis za: **{aktivna_trgovina}**")
     st.info(
         "Označite kvačicom kupljeni artikl – automatski se briše s popisa."
