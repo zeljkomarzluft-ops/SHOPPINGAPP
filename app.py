@@ -26,7 +26,8 @@ supabase = init_supabase()
 # --- FUNKCIJA ZA ANALIZU SLIKE IZ ZIP-a ---
 def obradi_sliku_bytes(image_bytes, trgovina_naziv, filename):
   genai.configure(api_key=st.secrets["gemini"]["api_key"])
-  model = genai.GenerativeModel("gemini-2.5-flash")
+  # Ažurirano na novi, aktivni model prema poruci sustava
+  model = genai.GenerativeModel("gemini-3.8-flash")
 
   prompt = (
       f"Analiziraj ovu sliku kataloga trgovine {trgovina_naziv}. Pronađi sve"
@@ -50,7 +51,6 @@ def obradi_sliku_bytes(image_bytes, trgovina_naziv, filename):
 
     proizvodi = []
     for item in artikli_lista:
-      # Slanje isključivo osnovnih podataka koji odgovaraju tablici
       proizvodi.append({
           "trgovina": str(trgovina_naziv),
           "artikl": str(item.get("artikl", "")),
@@ -254,7 +254,7 @@ with tab1:
         supabase.table("shopping_popis").delete().eq("id", idx).execute()
         st.rerun()
   else:
-    st.info(f"Nemate artikala na popisu za trgovina **{aktivna_trgovina}**.")
+    st.info(f"Nemate artikala na popisu za trgovinu **{aktivna_trgovina}**.")
 
   if popis_data:
     with st.expander("Pregled cijelog popisa (sve trgovine zajedno)"):
