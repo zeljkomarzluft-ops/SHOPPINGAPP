@@ -81,8 +81,15 @@ if st.sidebar.button("Skini i Obradi Arhivu"):
     try:
       with st.spinner("Preuzimam arhivu s Google Drive-a..."):
         output = "temp_katalog.zip"
-        # Uklonjen fuzzy argument koji je izazivao gresku
-        gdown.download(gdrive_link, output, quiet=False)
+        # Prilagodba GDrive linka za direktno preuzimanje
+        if "drive.google.com" in gdrive_link and "id=" in gdrive_link:
+          file_id = gdrive_link.split("id=")[1].split("&")[0]
+          gdrive_link = f"https://drive.google.com/uc?id={file_id}"
+        elif "drive.google.com" in gdrive_link and "/d/" in gdrive_link:
+          file_id = gdrive_link.split("/d/")[1].split("/")[0]
+          gdrive_link = f"https://drive.google.com/uc?id={file_id}"
+
+        gdown.download(gdrive_link, output, quiet=False, fuzzy=True)
 
       ukupno_spremljeno = 0
       with zipfile.ZipFile(output, "r") as z:
@@ -95,36 +102,35 @@ if st.sidebar.button("Skini i Obradi Arhivu"):
 
         if not slike_u_zipu:
           st.sidebar.error(
-              "U ZIP arhivi nisu pronađene slike (jpg/png format)."
+              "U ZIP arhivi nisu pronađene slike! Provjerite sadrži li ZIP"
+              " direktno slike."
           )
         else:
           progress_bar = st.sidebar.progress(0)
           total_files = len(slike_u_zipu)
+          st.sidebar.info(
+              f"Pronađeno {total_files} slika u arhivu. Krećem s obradom..."
+          )
 
           for i, filename in enumerate(slike_u_zipu):
             with z.open(filename) as img_file:
               img_bytes = img_file.read()
-              with st.spinner(
-                  f"Obrađujem sliku {i+1} od {total_files} ({filename})..."
-              ):
-                izvuceni_podaci = obradi_sliku_bytes(
-                    img_bytes, trgovina_select, filename
-                )
-                if izvuceni_podaci:
-                  supabase.table("katalog_artikli").insert(
-                      izvuceni_podaci
-                  ).execute()
-                  ukupno_spremljeno += len(izvuceni_podaci)
+              izvuceni_podaci = obradi_sliku_bytes(
+                  img_bytes, trgovina_select, filename
+              )
+              if izvuceni_podaci:
+                supabase.table("katalog_artikli").insert(
+                    izvuceni_podaci
+                ).execute()
+                ukupno_spremljeno += len(izvuceni_podaci)
             progress_bar.progress((i + 1) / total_files)
 
           st.sidebar.success(
-              f"Uspješno obrađeno i spremljeno {ukupno_spremljeno} artikala iz"
-              f" {total_files} slika!"
+              f"Uspješno obrađeno i spremljeno {ukupno_spremljeno} artikala!"
           )
+          st.rerun()
     except Exception as e:
-      st.sidebar.error(
-          f"Greška kod preuzimanja ili obrade: {str(e)}. Provjerite link."
-      )
+      st.sidebar.error(f"Greška kod preuzimanja ili obrade: {str(e)}")
   else:
     st.sidebar.error("Molimo unesite Google Drive link.")
 
