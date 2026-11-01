@@ -75,15 +75,6 @@ uploaded_zip = st.sidebar.file_uploader(
     f"Učitaj ZIP (.zip) sa slikama za {trgovina_select}"
 )
 
-# DIJAGNOSTIKA: Prikazat će nam što je mobitel poslao
-if uploaded_zip is not None:
-  st.sidebar.success(
-      f"Primljena datoteka: {uploaded_zip.name} (Veličina:"
-      f" {uploaded_zip.size} bajtova)"
-  )
-else:
-  st.sidebar.info("Trenutno nijedna datoteka nije odabrana u uploaderu.")
-
 if st.sidebar.button("Obradi i Raspakiraj ZIP"):
   if uploaded_zip is not None:
     ukupno_spremljeno = 0
@@ -124,14 +115,16 @@ if st.sidebar.button("Obradi i Raspakiraj ZIP"):
               f"Uspješno obrađeno i spremljeno {ukupno_spremljeno} artikala iz"
               f" {total_files} slika!"
           )
-          st.rerun()
     except Exception as e:
       st.sidebar.error(
           f"Greška kod čitanja ZIP-a: {str(e)}. Provjerite je li datoteka u"
           " .zip formatu."
       )
   else:
-    st.sidebar.error("Molimo učitajte ZIP datoteku.")
+    st.sidebar.error(
+        "Molimo prvo učitajte ZIP datoteku u gornji uploader prije"
+        " klikanja."
+    )
 
 if st.sidebar.button("🗑️ Očisti sve kataloge (Novi tjedan)"):
   supabase.table("katalog_artikli").delete().neq("id", 0).execute()
