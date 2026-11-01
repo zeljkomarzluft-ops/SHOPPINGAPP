@@ -50,13 +50,14 @@ def obradi_sliku_bytes(image_bytes, trgovina_naziv, filename):
 
     proizvodi = []
     for item in artikli_lista:
+      # Slanje isključivo osnovnih podataka koji odgovaraju tablici
       proizvodi.append({
-          "trgovina": trgovina_naziv,
-          "artikl": item.get("artikl"),
+          "trgovina": str(trgovina_naziv),
+          "artikl": str(item.get("artikl", "")),
           "nova_cijena": float(item.get("nova_cijena", 0)),
           "stara_cijena": (
               float(item.get("stara_cijena"))
-              if item.get("stara_cijena")
+              if item.get("stara_cijena") is not None
               else None
           ),
       })
@@ -82,7 +83,6 @@ if st.sidebar.button("Skini i Obradi Arhivu"):
     try:
       with st.spinner("Preuzimam arhivu s Google Drive-a..."):
         output = "temp_katalog.zip"
-        # Prilagodba GDrive linka za direktno preuzimanje
         if "drive.google.com" in gdrive_link and "id=" in gdrive_link:
           file_id = gdrive_link.split("id=")[1].split("&")[0]
           gdrive_link = f"https://drive.google.com/uc?id={file_id}"
@@ -92,14 +92,12 @@ if st.sidebar.button("Skini i Obradi Arhivu"):
 
         gdown.download(gdrive_link, output, quiet=False)
 
-      # Sigurnosna provjera je li preuzet pravi ZIP
       with open(output, "rb") as f:
         header = f.read(10)
       if not header.startswith(b"PK"):
         st.sidebar.error(
-            "Greška: Google Drive je blokirao direktno preuzimanje (vratio je"
-            " HTML stranicu). Provjerite jesu li postavke dijeljenja datoteke"
-            " na Drive-u podešene na 'Bilo tko s vezom može vidjeti'."
+            "Greška: Google Drive je vratio HTML stranicu umjesto ZIP-a."
+            " Provjerite jesu li postavke dijeljenja javne."
         )
       else:
         ukupno_spremljeno = 0
@@ -112,15 +110,12 @@ if st.sidebar.button("Skini i Obradi Arhivu"):
           ]
 
           if not slike_u_zipu:
-            st.sidebar.error(
-                "U ZIP arhivi nisu pronađene slike! Provjerite sadrži li ZIP"
-                " direktno slike."
-            )
+            st.sidebar.error("U ZIP arhivi nisu pronađene slike.")
           else:
             progress_bar = st.sidebar.progress(0)
             total_files = len(slike_u_zipu)
             st.sidebar.info(
-                f"Pronađeno {total_files} slika u arhivu. Krećem s obradom..."
+                f"Pronađeno {total_files} slika. Pokrećem spremanje..."
             )
 
             for i, filename in enumerate(slike_u_zipu):
@@ -131,24 +126,23 @@ if st.sidebar.button("Skini i Obradi Arhivu"):
                 )
                 if izvuceni_podaci:
                   try:
-                    supabase.table("katalog_artikli").insert(
-                        izvuceni_podaci
-                    ).execute()
+                    res = (
+                        supabase.table("katalog_artikli")
+                        .insert(izvuceni_podaci)
+                        .execute()
+                    )
                     ukupno_spremljeno += len(izvuceni_podaci)
                   except Exception as db_err:
-                    st.sidebar.error(
-                        f"Greška kod spremanja u bazu za {filename}:"
-                        f" {str(db_err)}"
-                    )
+                    st.sidebar.error(f"Baza error za {filename}: {str(db_err)}")
 
               progress_bar.progress((i + 1) / total_files)
 
             st.sidebar.success(
-                f"Uspješno obrađeno i spremljeno {ukupno_spremljeno} artikala!"
+                f"Uspješno spremljeno {ukupno_spremljeno} artikala u bazu!"
             )
             st.rerun()
     except Exception as e:
-      st.sidebar.error(f"Greška kod preuzimanja ili obrade: {str(e)}")
+      st.sidebar.error(f"Greška: {str(e)}")
   else:
     st.sidebar.error("Molimo unesite Google Drive link.")
 
@@ -260,7 +254,7 @@ with tab1:
         supabase.table("shopping_popis").delete().eq("id", idx).execute()
         st.rerun()
   else:
-    st.info(f"Nemate artikala na popisu za trgovinu **{aktivna_trgovina}**.")
+    st.info(f"Nemate artikala na popisu za trgovina **{aktivna_trgovina}**.")
 
   if popis_data:
     with st.expander("Pregled cijelog popisa (sve trgovine zajedno)"):
