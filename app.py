@@ -68,7 +68,6 @@ trgovina_select = st.sidebar.selectbox(
     ["Plodine", "Kaufland", "Lidl", "Konzum", "Interspar", "Eurospin"],
 )
 
-# Dodan parametar `accept_multiple_files=True` za odabir više slika odjednom
 uploaded_images = st.sidebar.file_uploader(
     f"Odaberi sve slike (screenshotove) za {trgovina_select}",
     type=["jpg", "png", "jpeg"],
@@ -77,7 +76,7 @@ uploaded_images = st.sidebar.file_uploader(
 
 if st.sidebar.button("Obradi i Spremi Sve Slike"):
   if uploaded_images:
-     ukupno_spremljeno = 0
+    ukupno_spremljeno = 0
     progress_bar = st.sidebar.progress(0)
     total_files = len(uploaded_images)
 
