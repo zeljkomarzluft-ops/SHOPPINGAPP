@@ -81,15 +81,15 @@ if st.sidebar.button("Skini i Obradi Arhivu"):
     try:
       with st.spinner("Preuzimam arhivu s Google Drive-a..."):
         output = "temp_katalog.zip"
-        # gdown automatski skida s GDrive linka
         gdown.download(gdrive_link, output, fuzzy=True)
 
       ukupno_spremljeno = 0
       with zipfile.ZipFile(output, "r") as z:
+        # ISPRAVLJENO: uklonjena višestruka uglata zagrada
         slike_u_zipu = [
             f
             for f in z.namelist()
-            if f.lower().endswith((".png",].jpg", ".jpeg"))
+            if f.lower().endswith((".png", ".jpg", ".jpeg"))
             and not f.startswith("__MACOSX/")
         ]
 
