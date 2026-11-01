@@ -71,8 +71,10 @@ trgovina_select = st.sidebar.selectbox(
     ["Plodine", "Kaufland", "Lidl", "Konzum", "Interspar", "Eurospin"],
 )
 
+# Korištenje accept_multiple_files=False rješava problem s dvostrukim slanjem na mobitelu
 uploaded_zip = st.sidebar.file_uploader(
-    f"Učitaj ZIP (.zip) sa slikama za {trgovina_select}"
+    f"Učitaj ZIP (.zip) sa slikama za {trgovina_select}",
+    accept_multiple_files=False,
 )
 
 if st.sidebar.button("Obradi i Raspakiraj ZIP"):
@@ -121,10 +123,7 @@ if st.sidebar.button("Obradi i Raspakiraj ZIP"):
           " .zip formatu."
       )
   else:
-    st.sidebar.error(
-        "Molimo prvo učitajte ZIP datoteku u gornji uploader prije"
-        " klikanja."
-    )
+    st.sidebar.error("Molimo prvo učitajte ZIP datoteku.")
 
 if st.sidebar.button("🗑️ Očisti sve kataloge (Novi tjedan)"):
   supabase.table("katalog_artikli").delete().neq("id", 0).execute()
