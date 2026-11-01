@@ -1,7 +1,4 @@
-import io
 import json
-import zipfile
-import gdown
 import google.generativeai as genai
 from PIL import Image
 import pandas as pd
@@ -24,18 +21,14 @@ def init_supabase():
 supabase = init_supabase()
 
 
-# --- FUNKCIJA ZA OPTIMIZACIJU I ANALIZU SLIKE ---
-def obradi_sliku_bytes(image_bytes, trgovina_naziv, filename):
+# --- FUNKCIJA ZA ANALIZU POJEDINAČNE SLIKE ---
+def obradi_jednu_sliku(uploaded_file, trgovina_naziv):
   genai.configure(api_key=st.secrets["gemini"]["api_key"])
   model = genai.GenerativeModel("gemini-3.8-flash")
 
   try:
-    img = Image.open(io.BytesIO(image_bytes))
+    img = Image.open(uploaded_file)
     img.thumbnail((1024, 1024))
-    
-    img_byte_arr = io.BytesIO()
-    img.save(img_byte_arr, format="JPEG", quality=85)
-    optimized_bytes = img_byte_arr.getvalue()
 
     prompt = (
         f"Analiziraj ovu sliku kataloga trgovine {trgovina_naziv}. Pronađi sve"
@@ -45,11 +38,7 @@ def obradi_sliku_bytes(image_bytes, trgovina_naziv, filename):
         " (broj ili null ako nema stare cijene)."
     )
 
-    image_part = {"mime_type": "image/jpeg", "data": optimized_bytes}
-    
-    # Poziv prema Gemini API-ju
-    response = model.generate_content([prompt, image_part])
-
+    response = model.generate_content([prompt, img])
     tekst_odgovora = (
         response.text.replace("```json", "").replace("```", "").strip()
     )
@@ -69,86 +58,50 @@ def obradi_sliku_bytes(image_bytes, trgovina_naziv, filename):
       })
     return proizvodi
   except Exception as e:
-    # Ako slika zapne ili baci gresku, vraca praznu listu i ide dalje
+    st.error(f"Greška kod obrade slike: {str(e)}")
     return []
 
 
-# --- BOČNA TRAKA (SIDEBAR) - GOOGLE DRIVE LINK ---
-st.sidebar.header("📅 Uvoz ZIP Arhive s Google Drive-a")
+# --- BOČNA TRAKA (SIDEBAR) - POJEDINAČNI UPLOAD SLIKA ---
+st.sidebar.header("📸 Uvoz pojedinačnih slika kataloga")
 trgovina_select = st.sidebar.selectbox(
     "Odaberi trgovinu:",
     ["Plodine", "Kaufland", "Lidl", "Konzum", "Interspar", "Eurospin"],
 )
 
-gdrive_link = st.sidebar.text_input(
-    "Zalijepi Google Drive link ZIP arhive:"
+uploaded_files = st.sidebar.file_uploader(
+    "Učitaj sliku/e kataloga (PNG, JPG):",
+    type=["png", "jpg", "jpeg"],
+    accept_multiple_files=True,
 )
 
-if st.sidebar.button("Skini i Obradi Arhivu"):
-  if gdrive_link:
-    try:
-      with st.spinner("Preuzimam arhivu s Google Drive-a..."):
-        output = "temp_katalog.zip"
-        if "drive.google.com" in gdrive_link and "id=" in gdrive_link:
-          file_id = gdrive_link.split("id=")[1].split("&")[0]
-          gdrive_link = f"https://drive.google.com/uc?id={file_id}"
-        elif "drive.google.com" in gdrive_link and "/d/" in gdrive_link:
-          file_id = gdrive_link.split("/d/")[1].split("/")[0]
-          gdrive_link = f"https://drive.google.com/uc?id={file_id}"
+if st.sidebar.button("Obradi i spremi učitane slike"):
+  if uploaded_files:
+    ukupno_spremljeno = 0
+    progress_bar = st.sidebar.progress(0)
+    total_files = len(uploaded_files)
 
-        gdown.download(gdrive_link, output, quiet=False)
+    for i, uploaded_file in enumerate(uploaded_files):
+      st.sidebar.text(
+          f"Obrađujem: {uploaded_file.name} ({i+1}/{total_files})"
+      )
+      izvuceni_podaci = obradi_jednu_sliku(uploaded_file, trgovina_select)
 
-      with open(output, "rb") as f:
-        header = f.read(10)
-      if not header.startswith(b"PK"):
-        st.sidebar.error(
-            "Greška: Google Drive je vratio HTML stranicu umjesto ZIP-a."
-            " Provjerite jesu li postavke dijeljenja javne."
-        )
-      else:
-        ukupno_spremljeno = 0
-        with zipfile.ZipFile(output, "r") as z:
-          slike_u_zipu = [
-              f
-              for f in z.namelist()
-              if f.lower().endswith((".png", ".jpg", ".jpeg"))
-              and not f.startswith("__MACOSX/")
-          ]
+      if izvuceni_podaci:
+        try:
+          supabase.table("katalog_artikli").insert(izvuceni_podaci).execute()
+          ukupno_spremljeno += len(izvuceni_podaci)
+        except Exception as db_err:
+          st.sidebar.error(f"Greška baze: {str(db_err)}")
 
-          if not slike_u_zipu:
-            st.sidebar.error("U ZIP arhivi nisu pronađene slike.")
-          else:
-            progress_bar = st.sidebar.progress(0)
-            total_files = len(slike_u_zipu)
-            status_text = st.sidebar.empty()
+      progress_bar.progress((i + 1) / total_files)
 
-            for i, filename in enumerate(slike_u_zipu):
-              status_text.text(f"Obrađujem sliku {i+1} od {total_files}...")
-              with z.open(filename) as img_file:
-                img_bytes = img_file.read()
-                izvuceni_podaci = obradi_sliku_bytes(
-                    img_bytes, trgovina_select, filename
-                )
-                if izvuceni_podaci:
-                  try:
-                    supabase.table("katalog_artikli").insert(
-                        izvuceni_podaci
-                    ).execute()
-                    ukupno_spremljeno += len(izvuceni_podaci)
-                  except Exception as db_err:
-                    pass
-
-              progress_bar.progress((i + 1) / total_files)
-
-            status_text.empty()
-            st.sidebar.success(
-                f"Uspješno spremljeno {ukupno_spremljeno} artikala!"
-            )
-            st.rerun()
-    except Exception as e:
-      st.sidebar.error(f"Greška: {str(e)}")
+    st.sidebar.success(
+        f"Uspješno spremljeno {ukupno_spremljeno} artikala u bazu!"
+    )
+    st.rerun()
   else:
-    st.sidebar.error("Molimo unesite Google Drive link.")
+    st.sidebar.error("Molimo odaberite barem jednu sliku.")
 
 if st.sidebar.button("🗑️ Očisti sve kataloge (Novi tjedan)"):
   supabase.table("katalog_artikli").delete().neq("id", 0).execute()
