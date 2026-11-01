@@ -1,6 +1,7 @@
 import io
 import json
 import zipfile
+import gdown
 import google.generativeai as genai
 import pandas as pd
 import streamlit as st
@@ -64,28 +65,31 @@ def obradi_sliku_bytes(image_bytes, trgovina_naziv, filename):
     return []
 
 
-# --- BOČNA TRAKA (SIDEBAR) - UPLOAD ZIP ARHIVE ---
-st.sidebar.header("📅 Upload ZIP Arhive Kataloga")
+# --- BOČNA TRAKA (SIDEBAR) - GOOGLE DRIVE LINK ---
+st.sidebar.header("📅 Uvoz ZIP Arhive s Google Drive-a")
 trgovina_select = st.sidebar.selectbox(
     "Odaberi trgovinu:",
     ["Plodine", "Kaufland", "Lidl", "Konzum", "Interspar", "Eurospin"],
 )
 
-# Korištenje accept_multiple_files=False rješava problem s dvostrukim slanjem na mobitelu
-uploaded_zip = st.sidebar.file_uploader(
-    f"Učitaj ZIP (.zip) sa slikama za {trgovina_select}",
-    accept_multiple_files=False,
+gdrive_link = st.sidebar.text_input(
+    "Zalijepi Google Drive link ZIP arhive:"
 )
 
-if st.sidebar.button("Obradi i Raspakiraj ZIP"):
-  if uploaded_zip is not None:
-    ukupno_spremljeno = 0
+if st.sidebar.button("Skini i Obradi Arhivu"):
+  if gdrive_link:
     try:
-      with zipfile.ZipFile(uploaded_zip, "r") as z:
+      with st.spinner("Preuzimam arhivu s Google Drive-a..."):
+        output = "temp_katalog.zip"
+        # gdown automatski skida s GDrive linka
+        gdown.download(gdrive_link, output, fuzzy=True)
+
+      ukupno_spremljeno = 0
+      with zipfile.ZipFile(output, "r") as z:
         slike_u_zipu = [
             f
             for f in z.namelist()
-            if f.lower().endswith((".png", ".jpg", ".jpeg"))
+            if f.lower().endswith((".png",].jpg", ".jpeg"))
             and not f.startswith("__MACOSX/")
         ]
 
@@ -119,11 +123,10 @@ if st.sidebar.button("Obradi i Raspakiraj ZIP"):
           )
     except Exception as e:
       st.sidebar.error(
-          f"Greška kod čitanja ZIP-a: {str(e)}. Provjerite je li datoteka u"
-          " .zip formatu."
+          f"Greška kod preuzimanja ili obrade: {str(e)}. Provjerite link."
       )
   else:
-    st.sidebar.error("Molimo prvo učitajte ZIP datoteku.")
+    st.sidebar.error("Molimo unesite Google Drive link.")
 
 if st.sidebar.button("🗑️ Očisti sve kataloge (Novi tjedan)"):
   supabase.table("katalog_artikli").delete().neq("id", 0).execute()
