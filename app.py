@@ -1,9 +1,13 @@
+import io
+import json
+import zipfile
+import google.generativeai as genai
 import pandas as pd
 import streamlit as st
 from supabase import create_client
 
 st.set_page_config(
-    page_title="Pametni Tjedni Shopping", page_icon="🛒", layout="wide"
+    page_title="Pametni Tjedni Popis", page_icon="🛒", layout="wide"
 )
 
 
@@ -18,11 +22,8 @@ def init_supabase():
 supabase = init_supabase()
 
 
-# --- FUNKCIJA ZA ANALIZU JEDNE SLIKE (POZIVA SE U PETLJI) ---
-def obradi_sliku_kataloga(uploaded_image, trgovina_naziv):
-  import google.generativeai as genai
-  import json
-
+# --- FUNKCIJA ZA ANALIZU SLIKE IZ ZIP-a ---
+def obradi_sliku_bytes(image_bytes, trgovina_naziv, filename):
   genai.configure(api_key=st.secrets["gemini"]["api_key"])
   model = genai.GenerativeModel("gemini-2.5-flash")
 
@@ -35,8 +36,11 @@ def obradi_sliku_kataloga(uploaded_image, trgovina_naziv):
   )
 
   try:
-    image_bytes = uploaded_image.getvalue()
-    image_part = {"mime_type": uploaded_image.type, "data": image_bytes}
+    # Određivanje mime type prema ekstenziji
+    mime_type = (
+        "image/png" if filename.lower().endswith(".png") else "image/jpeg"
+    )
+    image_part = {"mime_type": mime_type, "data": image_bytes}
     response = model.generate_content([prompt, image_part])
 
     tekst_odgovora = (
@@ -61,42 +65,58 @@ def obradi_sliku_kataloga(uploaded_image, trgovina_naziv):
     return []
 
 
-# --- BOČNA TRAKA (SIDEBAR) - MASOVNI UPLOAD SLIKA ---
-st.sidebar.header("📅 Masovni Upload Screenshotova")
+# --- BOČNA TRAKA (SIDEBAR) - UPLOAD ZIP ARHIVE ---
+st.sidebar.header("📅 Upload ZIP Arhive Kataloga")
 trgovina_select = st.sidebar.selectbox(
     "Odaberi trgovinu:",
     ["Plodine", "Kaufland", "Lidl", "Konzum", "Interspar", "Eurospin"],
 )
 
-uploaded_images = st.sidebar.file_uploader(
-    f"Odaberi sve slike (screenshotove) za {trgovina_select}",
-    type=["jpg", "png", "jpeg"],
-    accept_multiple_files=True,
+uploaded_zip = st.sidebar.file_uploader(
+    f"Učitaj ZIP (.zip) sa slikama za {trgovina_select}", type=["zip"]
 )
 
-if st.sidebar.button("Obradi i Spremi Sve Slike"):
-  if uploaded_images:
+if st.sidebar.button("Obradi i Raspakiraj ZIP"):
+  if uploaded_zip is not None:
     ukupno_spremljeno = 0
-    progress_bar = st.sidebar.progress(0)
-    total_files = len(uploaded_images)
+    with zipfile.ZipFile(uploaded_zip, "r") as z:
+      # Filtriramo samo slike
+      slike_u_zipu = [
+          f
+          for f in z.namelist()
+          if f.lower().endswith((".png", ".jpg", ".jpeg"))
+          and not f.startswith("__MACOSX/")
+      ]
 
-    for i, img in enumerate(uploaded_images):
-      with st.spinner(
-          f"Obrađujem sliku {i+1} od {total_files} ({img.name})..."
-      ):
-        izvuceni_podaci = obradi_sliku_kataloga(img, trgovina_select)
-        if izvuceni_podaci:
-          supabase.table("katalog_artikli").insert(izvuceni_podaci).execute()
-          ukupno_spremljeno += len(izvuceni_podaci)
-      progress_bar.progress((i + 1) / total_files)
+      if not slike_u_zipu:
+        st.sidebar.error("U ZIP arhivi nisu pronađene slike.")
+      else:
+        progress_bar = st.sidebar.progress(0)
+        total_files = len(slike_u_zipu)
 
-    st.sidebar.success(
-        f"Uspješno obrađeno i spremljeno {ukupno_spremljeno} artikala iz"
-        f" {total_files} slika!"
-    )
-    st.rerun()
+        for i, filename in enumerate(slike_u_zipu):
+          with z.open(filename) as img_file:
+            img_bytes = img_file.read()
+            with st.spinner(
+                f"Obrađujem sliku {i+1} od {total_files} ({filename})..."
+            ):
+              izvuceni_podaci = obradi_sliku_bytes(
+                  img_bytes, trgovina_select, filename
+              )
+              if izvuceni_podaci:
+                supabase.table("katalog_artikli").insert(
+                    izvuceni_podaci
+                ).execute()
+                ukupno_spremljeno += len(izvuceni_podaci)
+          progress_bar.progress((i + 1) / total_files)
+
+        st.sidebar.success(
+            f"Uspješno obrađeno i spremljeno {ukupno_spremljeno} artikala iz"
+            f" {total_files} slika u ZIP-u!"
+        )
+        st.rerun()
   else:
-    st.sidebar.error("Molimo odaberite minimalno jednu sliku.")
+    st.sidebar.error("Molimo učitajte ZIP datoteku.")
 
 if st.sidebar.button("🗑️ Očisti sve kataloge (Novi tjedan)"):
   supabase.table("katalog_artikli").delete().neq("id", 0).execute()
@@ -180,7 +200,7 @@ with tab1:
       item for item in popis_data if item.get("trgovina") == aktivna_trgovina
   ]
 
-  if popis_za_trgovinu:
+  if popis_za_trgovina:
     st.markdown(f"### Popis za: **{aktivna_trgovina}**")
     st.info(
         "Označite kvačicom kupljeni artikl – automatski se briše s popisa."
@@ -218,7 +238,7 @@ with tab1:
 
 # --- TAB 2: PRETRAŽIVANJE SVEGA ---
 with tab2:
-  st.subheader("🔍 Pretraži sve artikle iz uploadanih slika")
+  st.subheader("🔍 Pretraži sve artikle iz kataloga")
   if katalog_data:
     df_sve = pd.DataFrame(katalog_data)
     search_query = st.text_input("Pretraži po nazivu:")
@@ -228,4 +248,4 @@ with tab2:
       ]
     st.dataframe(df_sve, use_container_width=True)
   else:
-    st.info("Nema učitanih slika kataloga u bazi.")
+    st.info("Nema učitanih kataloga u bazi.")
