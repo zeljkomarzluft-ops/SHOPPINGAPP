@@ -81,11 +81,11 @@ if st.sidebar.button("Skini i Obradi Arhivu"):
     try:
       with st.spinner("Preuzimam arhivu s Google Drive-a..."):
         output = "temp_katalog.zip"
-        gdown.download(gdrive_link, output, fuzzy=True)
+        # Uklonjen fuzzy argument koji je izazivao gresku
+        gdown.download(gdrive_link, output, quiet=False)
 
       ukupno_spremljeno = 0
       with zipfile.ZipFile(output, "r") as z:
-        # ISPRAVLJENO: uklonjena višestruka uglata zagrada
         slike_u_zipu = [
             f
             for f in z.namelist()
