@@ -3,6 +3,7 @@ import json
 import zipfile
 import gdown
 import google.generativeai as genai
+from PIL import Image
 import pandas as pd
 import streamlit as st
 from supabase import create_client
@@ -23,25 +24,30 @@ def init_supabase():
 supabase = init_supabase()
 
 
-# --- FUNKCIJA ZA ANALIZU SLIKE IZ ZIP-a ---
+# --- FUNKCIJA ZA OPTIMIZACIJU I ANALIZU SLIKE ---
 def obradi_sliku_bytes(image_bytes, trgovina_naziv, filename):
   genai.configure(api_key=st.secrets["gemini"]["api_key"])
-  # Ažurirano na novi, aktivni model prema poruci sustava
   model = genai.GenerativeModel("gemini-3.8-flash")
 
-  prompt = (
-      f"Analiziraj ovu sliku kataloga trgovine {trgovina_naziv}. Pronađi sve"
-      " artikle, njihove nazive i nove/akcijske cijene u EUR. Vrati isključivo"
-      " u JSON formatu kao lista objekata s ključevima: 'artikl' (naziv"
-      " proizvoda), 'nova_cijena' (broj u eurima, npr 1.59), 'stara_cijena'"
-      " (broj ili null ako nema stare cijene)."
-  )
-
   try:
-    mime_type = (
-        "image/png" if filename.lower().endswith(".png") else "image/jpeg"
+    # Otvaranje slike i smanjivanje rezolucije radi brzine (max 1024px)
+    img = Image.open(io.BytesIO(image_bytes))
+    img.thumbnail((1024, 1024))
+    
+    # Spremanje u bajtove za slanje
+    img_byte_arr = io.BytesIO()
+    img.save(img_byte_arr, format="JPEG", quality=85)
+    optimized_bytes = img_byte_arr.getvalue()
+
+    prompt = (
+        f"Analiziraj ovu sliku kataloga trgovine {trgovina_naziv}. Pronađi sve"
+        " artikle, njihove nazive i nove/akcijske cijene u EUR. Vrati isključivo"
+        " u JSON formatu kao lista objekata s ključevima: 'artikl' (naziv"
+        " proizvoda), 'nova_cijena' (broj u eurima, npr 1.59), 'stara_cijena'"
+        " (broj ili null ako nema stare cijene)."
     )
-    image_part = {"mime_type": mime_type, "data": image_bytes}
+
+    image_part = {"mime_type": "image/jpeg", "data": optimized_bytes}
     response = model.generate_content([prompt, image_part])
 
     tekst_odgovora = (
@@ -63,7 +69,6 @@ def obradi_sliku_bytes(image_bytes, trgovina_naziv, filename):
       })
     return proizvodi
   except Exception as e:
-    st.sidebar.error(f"Greška kod obrade slike {filename}: {str(e)}")
     return []
 
 
@@ -114,11 +119,10 @@ if st.sidebar.button("Skini i Obradi Arhivu"):
           else:
             progress_bar = st.sidebar.progress(0)
             total_files = len(slike_u_zipu)
-            st.sidebar.info(
-                f"Pronađeno {total_files} slika. Pokrećem spremanje..."
-            )
+            status_text = st.sidebar.empty()
 
             for i, filename in enumerate(slike_u_zipu):
+              status_text.text(f"Obrađujem sliku {i+1} od {total_files}...")
               with z.open(filename) as img_file:
                 img_bytes = img_file.read()
                 izvuceni_podaci = obradi_sliku_bytes(
@@ -126,19 +130,18 @@ if st.sidebar.button("Skini i Obradi Arhivu"):
                 )
                 if izvuceni_podaci:
                   try:
-                    res = (
-                        supabase.table("katalog_artikli")
-                        .insert(izvuceni_podaci)
-                        .execute()
-                    )
+                    supabase.table("katalog_artikli").insert(
+                        izvuceni_podaci
+                    ).execute()
                     ukupno_spremljeno += len(izvuceni_podaci)
                   except Exception as db_err:
-                    st.sidebar.error(f"Baza error za {filename}: {str(db_err)}")
+                    pass
 
               progress_bar.progress((i + 1) / total_files)
 
+            status_text.empty()
             st.sidebar.success(
-                f"Uspješno spremljeno {ukupno_spremljeno} artikala u bazu!"
+                f"Uspješno spremljeno {ukupno_spremljeno} artikala!"
             )
             st.rerun()
     except Exception as e:
