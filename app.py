@@ -89,7 +89,8 @@ if st.sidebar.button("Skini i Obradi Arhivu"):
           file_id = gdrive_link.split("/d/")[1].split("/")[0]
           gdrive_link = f"https://drive.google.com/uc?id={file_id}"
 
-        gdown.download(gdrive_link, output, quiet=False, fuzzy=True)
+        # Uklonjen sporni fuzzy argument
+        gdown.download(gdrive_link, output, quiet=False)
 
       ukupno_spremljeno = 0
       with zipfile.ZipFile(output, "r") as z:
