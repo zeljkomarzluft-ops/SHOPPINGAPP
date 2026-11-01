@@ -64,17 +64,25 @@ def obradi_sliku_bytes(image_bytes, trgovina_naziv, filename):
     return []
 
 
-# --- BOČna Traka (SIDEBAR) - UPLOAD ZIP ARHIVE ---
+# --- BOČNA TRAKA (SIDEBAR) - UPLOAD ZIP ARHIVE ---
 st.sidebar.header("📅 Upload ZIP Arhive Kataloga")
 trgovina_select = st.sidebar.selectbox(
     "Odaberi trgovinu:",
     ["Plodine", "Kaufland", "Lidl", "Konzum", "Interspar", "Eurospin"],
 )
 
-# Maknuto ograničenje tipa da Android može bez problema poslati ZIP
 uploaded_zip = st.sidebar.file_uploader(
     f"Učitaj ZIP (.zip) sa slikama za {trgovina_select}"
 )
+
+# DIJAGNOSTIKA: Prikazat će nam što je mobitel poslao
+if uploaded_zip is not None:
+  st.sidebar.success(
+      f"Primljena datoteka: {uploaded_zip.name} (Veličina:"
+      f" {uploaded_zip.size} bajtova)"
+  )
+else:
+  st.sidebar.info("Trenutno nijedna datoteka nije odabrana u uploaderu.")
 
 if st.sidebar.button("Obradi i Raspakiraj ZIP"):
   if uploaded_zip is not None:
@@ -119,7 +127,7 @@ if st.sidebar.button("Obradi i Raspakiraj ZIP"):
           st.rerun()
     except Exception as e:
       st.sidebar.error(
-          "Greška kod čitanja ZIP datoteke. Provjerite je li datoteka u"
+          f"Greška kod čitanja ZIP-a: {str(e)}. Provjerite je li datoteka u"
           " .zip formatu."
       )
   else:
