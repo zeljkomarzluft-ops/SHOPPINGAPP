@@ -9,7 +9,7 @@ st.set_page_config(
 )
 
 
-# --- SPAJANJE NA POSTojeći SUPABASE ---
+# --- SPAJANJE NA POSTOJEĆI SUPABASE ---
 @st.cache_resource
 def init_supabase():
   url = st.secrets["supabase"]["url"]
@@ -20,7 +20,7 @@ def init_supabase():
 supabase = init_supabase()
 
 
-# --- FUNKCIJA ZA PARSIRANJE PDF-a ---
+# --- POBOLJŠANA FUNKCIJA ZA PARSIRANJE PDF-a ---
 def obradi_pdf_katalog(pdf_file, trgovina_naziv):
   proizvodi = []
   with pdfplumber.open(pdf_file) as pdf:
@@ -30,22 +30,39 @@ def obradi_pdf_katalog(pdf_file, trgovina_naziv):
         continue
 
       linije = text.split("\n")
+      prethodna_linija = ""
+
       for linija in linije:
+        linija_cista = linija.strip()
+
+        # Ignoriramo datume i kratke linije koje nisu artikli
+        if not linija_cista or "Cijena na" in linija_cista or "/" in linija_cista:
+          prethodna_linija = linija_cista
+          continue
+
+        # Tražimo cijenu u trenutnoj liniji
         cijene = re.findall(
-            r"(\d+[\.,]\d{2})\s*(?:€|EUR)", linija, re.IGNORECASE
+            r"(\d+[\.,]\d{2})\s*(?:€|EUR)", linija_cista, re.IGNORECASE
         )
 
         if cijene:
           naziv_artikla = re.sub(
-              r"(\d+[\.,]\d{2})\s*(?:€|EUR)", "", linija
+              r"(\d+[\.,]\d{2})\s*(?:€|EUR)", "", linija_cista
           ).strip()
+          if not naziv_artikla and len(prethodna_linija) > 2:
+            naziv_artikla = prethodna_linija
+
           stara_cijena = None
           nova_cijena = float(cijene[-1].replace(",", "."))
 
           if len(cijene) > 1:
             stara_cijena = float(cijene[0].replace(",", "."))
 
-          if len(naziv_artikla) > 2:
+          # Filtriramo da naziv nije samo broj ili oznaka mjere
+          if (
+              len(naziv_artikla) > 2
+              and not naziv_artikla.replace(" ", "").isdigit()
+          ):
             proizvodi.append({
                 "trgovina": trgovina_naziv,
                 "artikl": naziv_artikla,
@@ -53,6 +70,8 @@ def obradi_pdf_katalog(pdf_file, trgovina_naziv):
                 "stara_cijena": stara_cijena,
                 "stranica": page_num,
             })
+
+        prethodna_linija = linija_cista
   return proizvodi
 
 
@@ -70,7 +89,6 @@ if st.sidebar.button("Obradi i Spremi u Supabase"):
   if uploaded_pdf is not None:
     izvuceni_podaci = obradi_pdf_katalog(uploaded_pdf, trgovina_select)
     if izvuceni_podaci:
-      # Spremanje u Supabase bazu
       supabase.table("katalog_artikli").insert(izvuceni_podaci).execute()
       st.sidebar.success(
           f"Uspješno spremljeno {len(izvuceni_podaci)} artikala u bazu!"
