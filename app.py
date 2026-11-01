@@ -30,11 +30,9 @@ def obradi_sliku_bytes(image_bytes, trgovina_naziv, filename):
   model = genai.GenerativeModel("gemini-3.8-flash")
 
   try:
-    # Otvaranje slike i smanjivanje rezolucije radi brzine (max 1024px)
     img = Image.open(io.BytesIO(image_bytes))
     img.thumbnail((1024, 1024))
     
-    # Spremanje u bajtove za slanje
     img_byte_arr = io.BytesIO()
     img.save(img_byte_arr, format="JPEG", quality=85)
     optimized_bytes = img_byte_arr.getvalue()
@@ -48,6 +46,8 @@ def obradi_sliku_bytes(image_bytes, trgovina_naziv, filename):
     )
 
     image_part = {"mime_type": "image/jpeg", "data": optimized_bytes}
+    
+    # Poziv prema Gemini API-ju
     response = model.generate_content([prompt, image_part])
 
     tekst_odgovora = (
@@ -69,6 +69,7 @@ def obradi_sliku_bytes(image_bytes, trgovina_naziv, filename):
       })
     return proizvodi
   except Exception as e:
+    # Ako slika zapne ili baci gresku, vraca praznu listu i ide dalje
     return []
 
 
