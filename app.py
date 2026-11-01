@@ -62,6 +62,7 @@ def obradi_sliku_bytes(image_bytes, trgovina_naziv, filename):
       })
     return proizvodi
   except Exception as e:
+    st.sidebar.error(f"Greška kod obrade slike {filename}: {str(e)}")
     return []
 
 
@@ -91,7 +92,7 @@ if st.sidebar.button("Skini i Obradi Arhivu"):
 
         gdown.download(gdrive_link, output, quiet=False)
 
-      # Sigurnosna provjera je li preuzet pravi ZIP (mora počinjati s 'PK')
+      # Sigurnosna provjera je li preuzet pravi ZIP
       with open(output, "rb") as f:
         header = f.read(10)
       if not header.startswith(b"PK"):
@@ -129,10 +130,17 @@ if st.sidebar.button("Skini i Obradi Arhivu"):
                     img_bytes, trgovina_select, filename
                 )
                 if izvuceni_podaci:
-                  supabase.table("katalog_artikli").insert(
-                      izvuceni_podaci
-                  ).execute()
-                  ukupno_spremljeno += len(izvuceni_podaci)
+                  try:
+                    supabase.table("katalog_artikli").insert(
+                        izvuceni_podaci
+                    ).execute()
+                    ukupno_spremljeno += len(izvuceni_podaci)
+                  except Exception as db_err:
+                    st.sidebar.error(
+                        f"Greška kod spremanja u bazu za {filename}:"
+                        f" {str(db_err)}"
+                    )
+
               progress_bar.progress((i + 1) / total_files)
 
             st.sidebar.success(
