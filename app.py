@@ -18,12 +18,11 @@ def init_supabase():
 supabase = init_supabase()
 
 
-# --- FUNKCIJA ZA ANALIZU SLIKE KATALOGA POMOĆU AI MODELA ---
+# --- FUNKCIJA ZA ANALIZU JEDNE SLIKE (POZIVA SE U PETLJI) ---
 def obradi_sliku_kataloga(uploaded_image, trgovina_naziv):
-  # Ovdje koristimo ugrađeni AI model koji može čitati tekst i cijene sa slika
   import google.generativeai as genai
+  import json
 
-  # Konfiguriramo model koristeći tajni ključ iz Streamlita (može koristiti isti ili GEMINI_API_KEY)
   genai.configure(api_key=st.secrets["gemini"]["api_key"])
   model = genai.GenerativeModel("gemini-2.5-flash")
 
@@ -35,17 +34,11 @@ def obradi_sliku_kataloga(uploaded_image, trgovina_naziv):
       " (broj ili null ako nema stare cijene)."
   )
 
-  # Pretvaramo sliku za slanje modelu
-  image_bytes = uploaded_image.getvalue()
-  image_part = {"mime_type": uploaded_image.type, "data": image_bytes}
-
-  response = model.generate_content([prompt, image_part])
-
-  # Parsiranje odgovora (očekujemo čisti JSON)
-  import json
-
   try:
-    # Čistimo tekst odgovora od markdown oznaka ako ih AI vrati
+    image_bytes = uploaded_image.getvalue()
+    image_part = {"mime_type": uploaded_image.type, "data": image_bytes}
+    response = model.generate_content([prompt, image_part])
+
     tekst_odgovora = (
         response.text.replace("```json", "").replace("```", "").strip()
     )
@@ -65,38 +58,46 @@ def obradi_sliku_kataloga(uploaded_image, trgovina_naziv):
       })
     return proizvodi
   except Exception as e:
-    st.error(f"Greška kod čitanja slike: {e}")
     return []
 
 
-# --- BOČNA TRAKA (SIDEBAR) - UPLOAD SLIKA KATALOGA ---
-st.sidebar.header("📅 Upload Screenshotova Kataloga")
+# --- BOČNA TRAKA (SIDEBAR) - MASOVNI UPLOAD SLIKA ---
+st.sidebar.header("📅 Masovni Upload Screenshotova")
 trgovina_select = st.sidebar.selectbox(
     "Odaberi trgovinu:",
     ["Plodine", "Kaufland", "Lidl", "Konzum", "Interspar", "Eurospin"],
 )
-uploaded_image = st.sidebar.file_uploader(
-    f"Učitaj sliku (screenshot) za {trgovina_select}",
+
+# Dodan parametar `accept_multiple_files=True` za odabir više slika odjednom
+uploaded_images = st.sidebar.file_uploader(
+    f"Odaberi sve slike (screenshotove) za {trgovina_select}",
     type=["jpg", "png", "jpeg"],
+    accept_multiple_files=True,
 )
 
-if st.sidebar.button("Obradi i Spremi Sliku u Bazu"):
-  if uploaded_image is not None:
-    with st.spinner("AI čita cijene i artikle sa slike..."):
-      izvuceni_podaci = obradi_sliku_kataloga(uploaded_image, trgovina_select)
-      if izvuceni_podaci:
-        supabase.table("katalog_artikli").insert(izvuceni_podaci).execute()
-        st.sidebar.success(
-            f"Uspješno spremljeno {len(izvuceni_podaci)} artikala sa slike!"
-        )
-        st.rerun()
-      else:
-        st.sidebar.warning(
-            "AI nije uspio pronaći artikle na slici. Pokušajte s jasnijim"
-            " screenshotom."
-        )
+if st.sidebar.button("Obradi i Spremi Sve Slike"):
+  if uploaded_images:
+     ukupno_spremljeno = 0
+    progress_bar = st.sidebar.progress(0)
+    total_files = len(uploaded_images)
+
+    for i, img in enumerate(uploaded_images):
+      with st.spinner(
+          f"Obrađujem sliku {i+1} od {total_files} ({img.name})..."
+      ):
+        izvuceni_podaci = obradi_sliku_kataloga(img, trgovina_select)
+        if izvuceni_podaci:
+          supabase.table("katalog_artikli").insert(izvuceni_podaci).execute()
+          ukupno_spremljeno += len(izvuceni_podaci)
+      progress_bar.progress((i + 1) / total_files)
+
+    st.sidebar.success(
+        f"Uspješno obrađeno i spremljeno {ukupno_spremljeno} artikala iz"
+        f" {total_files} slika!"
+    )
+    st.rerun()
   else:
-    st.sidebar.error("Molimo odaberite sliku.")
+    st.sidebar.error("Molimo odaberite minimalno jednu sliku.")
 
 if st.sidebar.button("🗑️ Očisti sve kataloge (Novi tjedan)"):
   supabase.table("katalog_artikli").delete().neq("id", 0).execute()
@@ -105,14 +106,13 @@ if st.sidebar.button("🗑️ Očisti sve kataloge (Novi tjedan)"):
 
 
 # --- GLAVNI EKRAN APLIKACIJE ---
-st.title("🛒 Pametni Tjedni Popis po Trgovinama (Slike / Screenshots)")
+st.title("🛒 Pametni Tjedni Popis po Trgovinama")
 
 tab1, tab2 = st.tabs([
     "📝 Slaganje Popisa i Trgovine",
     "🔍 Pretraživanje svih Kataloga",
 ])
 
-# DOHVAĆANJE IZ BAZE
 response_popis = (
     supabase.table("shopping_popis").select("*").order("id").execute()
 )
@@ -140,7 +140,6 @@ with tab1:
       odabrana_trgovina = "Nepoznato (Nema u katalozima)"
       pridruzena_cijena = None
 
-      # Automatska provjera u kojoj je trgovini artikl najjeftiniji
       if katalog_data:
         df_baza = pd.DataFrame(katalog_data)
         rezultati = df_baza[
@@ -163,8 +162,6 @@ with tab1:
       st.rerun()
 
   st.markdown("---")
-
-  # --- PADAJUĆI IZBORNIK TRGOVINA ZA SRIJEDU ---
   st.subheader("🛍️ Kupovina po trgovinama")
 
   dostupne_trgovine = [
